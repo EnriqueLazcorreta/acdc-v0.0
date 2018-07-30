@@ -102,3 +102,6 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+
+# Icono de "compartido" en Drive (NO TIENE EFECTO)
+"Icon\r"
