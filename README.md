@@ -1,7 +1,7 @@
 # acdc-v0.0
 Clases para desarrollar el Análisis basado en Caracterizaciones de Datasets de Clasificación.
 
-##Introducción
+## Introducción
 Para llevar a cabo cualquier experimento de clasificación simple se recogen datos sobre las características de mucho individuos respecto a ciertos atributos y se anota a qué clase pertenece el individuo, obteniendo un Dataset de Clasificación (DC), una colección de vectores de N+1 elementos, siendo N el número de atributos del experimento. Llamaremos caracterización al conjunto de los N primeros valores y clase al último valor, por lo que una evidencia es simplemente un par (caracterización, clase).
 
 Uno de los objetivos de un experimento de clasificación es encontrar clasificadores, funciones a las que se proporciona una caracterización y devuelve una clase, generalmente indicando qué probabilidad hay de que realmente el individuo pertenezca a esa clase.

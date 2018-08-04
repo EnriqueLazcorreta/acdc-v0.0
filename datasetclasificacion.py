@@ -13,23 +13,9 @@ import time, os, configparser as cp, pandas as pd, pickle
 from funcionesauxiliares import tiempo_transcurrido, memoria_dataset,\
                                 memoria_proceso, sha1_archivo, tamanyo_legible
 
-class DatasetClasificacion():
-    """    
-    Un dataset de clasificación (DC) contiene evidencias, caracterizaciones
-    clasificadas (supuestamente bien). Pueden ser evidencias completas o tener
-    valores desconocidos en su caracterización (valores que toman los atributos
-    en la evidencia).
-    
-    En algunos casos, un DC contiene atributos con un único valor, atributos
-    a los que llamamos constantes. Esta información no sirve para el proceso
-    de clasificación y duplica el número de resultados por lo que se eliminan.
-    
-    Un Catálogo Robusto (CR) sólo contiene evidencias completas sin
-    incertidumbre, y no contiene atributos constantes.
-    
-    Esta clase recibe un DC y obtiene su MCR, el Máximo Catálogo Robusto que
-    contiene.
-    
+
+class InfoDC():
+    """
     Las características del DC que interesan para ACDCv0.0 son:
         
         clase_al_final:
@@ -45,7 +31,49 @@ class DatasetClasificacion():
             Número de evidencias robustas del DC.
         atributos_constantes:
             Lista de atributos constantes. Su posición en el DC
+    """
+    def __init__(self, dc, clase_al_final=True):
+        self.num_evidencias, self.num_columnas = dc.shape
+        self.num_atributos = self.num_columnas - 1
         
+        self.clase = dc.columns[self.num_columnas-1] if clase_al_final\
+                                                     else dc.columns[0]
+        self.atributos = dc.columns[:self.num_columnas-1] if clase_al_final\
+                                                          else dc.columns[1:]
+        
+        #TODO Seguro que hay un modo de obtener mejor resultado
+        self.atributos_con_datos_desconocidos = []
+        atributos_y_clase = dc.describe(include='all')
+        for i, c in enumerate(atributos_y_clase.loc['count']):
+            if c < self.num_evidencias:
+                self.atributos_con_datos_desconocidos.append(dc.columns[i])
+#                print('¡La columna {} tiene {:,} valores!'.format(i, c))
+#                print('¡El atributo {} tiene {:,} valores!'.format(atributos_y_clase.columns[i], c))
+
+        self.uso_memoria = 0
+        for i in range(self.num_columnas):
+            self.uso_memoria += dc.memory_usage(i, deep=True)[1]
+#        self.uso_memoria = dc.memory_usage(deep=True)
+
+
+
+class DatasetClasificacion():
+    """
+    Un dataset de clasificación (DC) contiene evidencias, caracterizaciones
+    clasificadas (supuestamente bien). Pueden ser evidencias completas o tener
+    valores desconocidos en su caracterización (valores que toman los atributos
+    en la evidencia).
+    
+    En algunos casos, un DC contiene atributos con un único valor, atributos
+    a los que llamamos constantes. Esta información no sirve para el proceso
+    de clasificación y duplica el número de resultados por lo que se eliminan.
+    
+    Un Catálogo Robusto (CR) sólo contiene evidencias completas sin
+    incertidumbre, y no contiene atributos constantes.
+    
+    Esta clase recibe un DC y obtiene su MCR, el Máximo Catálogo Robusto que
+    contiene.
+            
     A modo descriptivo, para futuras versiones:
         
         conjunto_incertidumbre:
@@ -78,14 +106,14 @@ class DatasetClasificacion():
         El DC se lee con pd.read_csv() y se guarda en un pd.DataFrame.
         
         Los DC descargados del repositorio KEEL, probados todos con este
-        software, tienen la clase al final de la evidencia. En UCI suelen
-        tener la clase al principio de la evidencia. Es necesario saber dónde
-        está situada la clase en cualquier problema de clasificación.
+        software, tienen la clase al final de la evidencia. En UCI no es
+        siempre así, en mushroom tiene la clase al principio de la evidencia.
+        Es necesario saber dónde está situada la clase en cualquier problema de
+        clasificación. Se presentará una muestra del archivo al usuario para
+        que pueda indicar dónde está la clase.
         
         Los valores desconocidos se marcan con '?' en UCI.
-        
-        Devuelve True si contiene incertidumbre.
-        
+                
         **kw se podrá completar con las opciones de pandas.read_csv().
         """
         #TODO Aclarar si necesito estas variables,
@@ -98,6 +126,10 @@ class DatasetClasificacion():
         self.ruta_datasets = ruta_datasets
         self.nombre_dataset = nombre_dataset
         self.ruta_resultados = ruta_resultados
+        self.archivo_original = ruta_datasets + '/' + nombre_dataset + '.csv'
+        self.base_archivo_resultados = ruta_resultados + '/' + nombre_dataset
+        #TODO Las extensiones deberían estar en una lista guardada en el
+        #     archivo .cfg por si el usuario quiere modificarlas.
         
         self.mostrar_proceso = mostrar_proceso
         
@@ -108,14 +140,21 @@ class DatasetClasificacion():
             return
 
         self.__dataset_leido = False if num_filas_a_leer is None else True
-
-        self.num_evidencias_dataset, self.num_columnas_dataset = \
-                                                             self.dataset.shape
         
-        self.clase = self.dataset.columns[self.num_columnas_dataset-1] \
+        
+        
+        #TODO Crear un InfoDC distinto cada vez que cambie self.dataset.
+        #TODO Eliminar todas las variables de DC cuando tenga todos los InfoDC.
+        self.info_dataset_original = InfoDC(self.dataset, clase_al_final)
+
+#        self.num_evidencias_dataset, self.num_columnas_dataset = \
+#                                                             self.dataset.shape
+        
+        self.clase = self.dataset.columns[self.info_dataset_original.num_columnas-1] \
                      if clase_al_final else self.dataset.columns[0]
-        self.atributos = self.dataset.columns[:self.num_columnas_dataset-1] \
+        self.atributos = self.dataset.columns[:self.info_dataset_original.num_columnas-1] \
                      if clase_al_final else self.dataset.columns[1:]
+        self.num_atributos_dataset = len(self.atributos)
 
 
         if self.mostrar_proceso:
@@ -139,7 +178,7 @@ class DatasetClasificacion():
         del borrar
 
         if self.mostrar_proceso:
-            num_evidencias_incompletas = self.num_evidencias_dataset -\
+            num_evidencias_incompletas = self.info_dataset_original.num_evidencias -\
                                          self.num_evidencias_completas
             if num_evidencias_incompletas:
                 print('\tEliminadas', '{:,}'.format(num_evidencias_incompletas),
@@ -160,7 +199,7 @@ class DatasetClasificacion():
         if self.mostrar_proceso:
             if self.num_atributos_constantes:
                 print('\tQuedan',
-                      self.num_columnas_dataset-self.num_atributos_constantes,
+                      self.info_dataset_original.num_columnas-self.num_atributos_constantes,
                       'atributos al eliminar',
                       self.num_atributos_constantes, 'atributos constantes')
             else:
@@ -242,8 +281,7 @@ class DatasetClasificacion():
     def lee_dataset(self, num_filas_a_leer=None, valores_na='?'):
         try:
             #TODO Usar módulo os para determinar si añado '/' a la ruta
-            dataset = pd.read_csv(self.ruta_datasets + '/' + \
-                                  self.nombre_dataset + '.csv',
+            dataset = pd.read_csv(self.archivo_original,
                                   na_values=valores_na,
                                   skipinitialspace=True,
                                   nrows=num_filas_a_leer)
@@ -255,10 +293,22 @@ class DatasetClasificacion():
         
 
     def elimina_evidencias_incompletas(self):
-        self.evidencias_con_datos_desconocidos = pd.isnull(self.dataset).any(1).nonzero()[0]
+        #TODO Revisar otros métodos de obtener lo mismo: 
+        #          pd.Index.difference(pd.Index)
+        #     Primero crearía el índice de dataset y después de dropna lo
+        #     vuelvo a crear y calculo la diferencia.
+#        idx1 = pd.Index(self.dataset)
+        self.evidencias_con_datos_desconocidos = \
+                                    pd.isnull(self.dataset).any(1).nonzero()[0]
         
         self.dataset.dropna(inplace=True)
-        self.num_evidencias_completas = self.dataset.shape[0]     
+        self.num_evidencias_completas = self.dataset.shape[0]
+#        idx2 = pd.Index(self.dataset)
+#        print(idx1.difference(idx2).shape)
+#        print(self.evidencias_con_datos_desconocidos.shape)
+        #TODO En census indica 968 cuando se supone que hay 977 ev. incompletas
+        #     En mushroom-UCI ambos son 2480 (correcto)
+
 
 
     def elimina_atributos_constantes(self):
@@ -276,9 +326,12 @@ class DatasetClasificacion():
 
 
     def elimina_evidencias_duplicadas(self):
+#        idx1 = pd.Index(self.dataset)
         self.dataset.drop_duplicates(inplace=True)
         self.num_evidencias_catalogo, self.num_columnas_catalogo =\
                                                              self.dataset.shape
+#        idx2 = pd.Index(self.dataset)
+#        print(idx1.difference(idx2).shape)
 
     def elimina_evidencias_con_incertidumbre(self):
         self.dataset.drop_duplicates(self.atributos, keep=False, inplace=True)
@@ -293,7 +346,8 @@ class DatasetClasificacion():
 
 
     def guarda_catalogo(self):
-        archivo = self.ruta_resultados + '/' + self.nombre_dataset
+        #TODO Quizá el nombre del archivo deba obtenerlo en una función
+        archivo = self.base_archivo_resultados
         if self.num_atributos_constantes:
             for atributo in self.atributos_constantes:
                 archivo += '-' + str(self.atributos_constantes[atributo])
@@ -307,7 +361,7 @@ class DatasetClasificacion():
 
 
     def guarda_catalogo_robusto(self):
-        archivo = self.ruta_resultados + '/' + self.nombre_dataset
+        archivo = self.base_archivo_resultados
         if self.num_atributos_constantes:
             for atributo in self.atributos_constantes:
                 archivo += '-' + str(self.atributos_constantes[atributo])
@@ -324,21 +378,20 @@ class DatasetClasificacion():
         archivo_proyecto = cp.ConfigParser()
         archivo_proyecto.optionxform = lambda option: option
         
-        nombre_archivo = self.ruta_datasets + '/' + self.nombre_dataset + '.csv'
         archivo_proyecto['DEFAULT'] = {\
                 'Ruta datasets': self.ruta_datasets,
                 'Nombre dataset': self.nombre_dataset,
-                'Ruta resultados': self.ruta_resultados,'sha1': \
-                                   sha1_archivo(nombre_archivo),
-                'Tamaño': tamanyo_legible(os.path.getsize(nombre_archivo))}
+                'Ruta resultados': self.ruta_resultados,
+                'sha1': sha1_archivo(self.archivo_original),
+             'Tamaño': tamanyo_legible(os.path.getsize(self.archivo_original))}
 
         archivo_proyecto['DEFAULT']['Num evidencias'] = \
-                                           str(self.num_evidencias_dataset)
+                                           str(self.info_dataset_original.num_evidencias)
         archivo_proyecto['DEFAULT']['Num atributos'] = \
-                                         str(self.num_columnas_dataset - 1)
+                                         str(self.info_dataset_original.num_columnas - 1)
         archivo_proyecto['DEFAULT']['Clase'] = self.clase
         archivo_proyecto['DEFAULT']['Num evidencias incompletas'] = \
-               str(self.num_evidencias_dataset - self.num_evidencias_completas)
+               str(self.info_dataset_original.num_evidencias - self.num_evidencias_completas)
         archivo_proyecto['DEFAULT']['Num atributos constantes'] = \
                                              str(self.num_atributos_constantes)
         archivo_proyecto['DEFAULT']['Num evidencias con incertidumbre'] = \
@@ -368,13 +421,12 @@ class DatasetClasificacion():
         archivo_proyecto['Catálogo Robusto']['Num atributos'] = \
                                     str(self.num_columnas_catalogo_robusto - 1)
         
-        with open(self.ruta_resultados + '/' + self.nombre_dataset + '.cfg',
-                  'w') as datos_proyecto:
+        with open(self.base_archivo_resultados + '.cfg', 'w') as datos_proyecto:
             archivo_proyecto.write(datos_proyecto)
         
 
     def guarda_datos_desconocidos(self):
-        with open(self.ruta_resultados + '/' + self.nombre_dataset + \
+        with open(self.base_archivo_resultados + \
                   '.datos-desconocidos.acdc', 'wb') as archivo:
             pickle.dump(self.evidencias_con_datos_desconocidos, archivo)
         
@@ -382,15 +434,51 @@ class DatasetClasificacion():
     #TODO Experimental. Para leer el csv he de indicar qué filas saltar, no las
     #     que quiero leer
     def lee_datos_desconocidos(self):
-        with open(self.ruta_resultados + '/' + self.nombre_dataset +
+        with open(self.base_archivo_resultados +
                   '.datos-desconocidos.acdc', 'rb') as archivo:
             self.evidencias_con_datos_desconocidos = pickle.load(archivo)
-        filas_a_excluir = [i for i in range(self.num_evidencias_dataset) \
+        filas_a_excluir = [i for i in range(self.info_dataset_original.num_evidencias) \
                            if i not in self.evidencias_con_datos_desconocidos]
-        #TODO dtst = self.ruta_datasets + '/' + self.nombre_dataset + '.csv'
+
         #TODO Encapsular en try/except.
-        return pd.read_csv(self.ruta_datasets + '/' + self.nombre_dataset +
-                           '.csv', skiprows=filas_a_excluir)
+        return pd.read_csv(self.archivo_original, skiprows=filas_a_excluir)
+
+
+    #TODO self.dataset puede cambiar, tenerlo en cuenta.
+    def muestra(self, num_filas):
+        return self.dataset.head(num_filas)
+
+
+    #TODO self.dataset puede cambiar, tenerlo en cuenta.
+    def describe_atributos_y_clase(self):
+        return self.dataset.describe(include='all')
+
+
+    #TODO self.dataset puede cambiar, tenerlo en cuenta.
+    def dataset_info(self):
+        return self.dataset.info()
+
+
+    def atributos_con_datos_desconocidos(self):
+        total = self.info_dataset_original.num_evidencias
+        atributos = []
+        
+        
+        atributos_y_clase = self.dataset.describe(include='all')
+        for i, c in enumerate(atributos_y_clase.loc['count']):
+            if c < total:
+                atributos.append(self.dataset.columns[i])
+                print('\t¡El atributo {} ({}) tiene {:,} valores!'.format(atributos_y_clase.columns[i], i, c))
+        
+        
+        
+#        for i, c in enumerate(self.atributos[0]):
+#            atributos.append((i, c))
+#            if c < total:
+#                atributos.append(self.dataset.columns[i])
+#                print('¡La columna {} tiene {} valores!'.format(i, c))
+#                print('¡El atributo {} tiene {} valores!'.format(atributos_y_clase.columns[i], c))
+        return atributos
 
 
 
@@ -421,14 +509,20 @@ if __name__ == '__main__':
     num_archivos = len(archivos_KEEL)
 
 #    for i, nombre_dataset in enumerate(archivos_KEEL):
-#    for i, nombre_dataset in enumerate(['abalone']):
+    for i, nombre_dataset in enumerate(['abalone']):
+#TODO En http://sci2s.ugr.es/keel/dataset.php?cod=52 dicen:
+#           "In this version, 3 duplicated instances have been removed from the 
+#            original UCI dataset."
+#     Pero yo no encuentro duplicados en abalone-UCI, que sí tiene 3 más.
+#    for i, nombre_dataset in enumerate(['abalone-UCI']):
 #    for i, nombre_dataset in enumerate(['adult']):
-#    for i, nombre_dataset in enumerate(['adult']):
+#    for i, nombre_dataset in enumerate(['adult-UCI']):
+#    for i, nombre_dataset in enumerate(['adult-con-test-UCI']):
 #    for i, nombre_dataset in enumerate(['balloons']):
 #    for i, nombre_dataset in enumerate(['census']):
 #    for i, nombre_dataset in enumerate(['hepatitis']):
 #    for i, nombre_dataset in enumerate(['kddcup']):
-    for i, nombre_dataset in enumerate(['kddcup99']):
+#    for i, nombre_dataset in enumerate(['kddcup99']):
 #    for i, nombre_dataset in enumerate(['monk-2']):
 #    for i, nombre_dataset in enumerate(['mushroom']):
 #    for i, nombre_dataset in enumerate(['mushroom-UCI']):
@@ -442,9 +536,11 @@ if __name__ == '__main__':
         ruta_datasets = '../datos/ACDC/'
         ruta_resultados = '../datos/catalogos/'
         #TODO No puedo gestionar así los datasets con clase al principio,
-        #     debería crear una tupla con los valores COMPROBADOS.
-        clase_al_final = False if '-UCI' in nombre_dataset else True
-        guardar_resultados = True
+        #     debería crear una tupla con los valores COMPROBADOS. Tengo
+        #     adult-UCI con la clase al final y mushroom-UCI al principio
+#        clase_al_final = False if '-UCI' in nombre_dataset else True
+        clase_al_final = True
+        guardar_resultados = False
         num_filas_a_leer = None
         mostrar_proceso = True
         mostrar_tiempos = False
