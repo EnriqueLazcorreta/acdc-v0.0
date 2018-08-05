@@ -7,7 +7,7 @@ Created on Tue Jul 31 09:56:17 2018
 '''
 
 from tkinter import Tk, Menu, StringVar, Text, Listbox, Button, BooleanVar
-from tkinter.ttk import LabelFrame, Scrollbar, Label, Style
+from tkinter.ttk import LabelFrame, Scrollbar, Label, Style, Treeview
 from tkinter.filedialog import askopenfilename, askdirectory
 import pandas as pd, time, os, sys
 from configparser import ConfigParser
@@ -52,8 +52,9 @@ class GUIDatasetClasificacion():
 
 
     def crea_GUI(self):
+        root = self.root
         #Menús
-        self.menubar = Menu(self.root, tearoff=0)
+        self.menubar = Menu(root, tearoff=0)
         
         m_archivo = Menu(self.menubar, tearoff=0)
         m_archivo.add_command(label='Abrir', command=self.abrir_dataset,
@@ -80,7 +81,7 @@ class GUIDatasetClasificacion():
                                         variable=self._rutas_relativas)
         self.m_configuracion.add_separator()
         #TODO Revisar self.v_tamanyo_muestra, no la uso
-#        self.v_tamanyo_muestra = StringVar(self.root, 'Tamaño muestra ({:,})'.\
+#        self.v_tamanyo_muestra = StringVar(root, 'Tamaño muestra ({:,})'.\
 #                                           format(self._tamanyo_muestra))
         self.m_cfg_tamanyo_muestra = \
             self.m_configuracion.add_command(label='Tamaño muestra ({:,})'.\
@@ -99,11 +100,11 @@ class GUIDatasetClasificacion():
                               variable=self._mostrar_proceso)
         self.menubar.add_cascade(label='Ver', menu=m_ver)
         
-        self.root.config(menu=self.menubar)
+        root.config(menu=self.menubar)
         
         
         #Dataset de clasificación
-        lf_dataset = LabelFrame(self.root, text='Dataset de Clasificación')
+        lf_dataset = LabelFrame(root, text='Dataset de Clasificación')
         lf_dataset.pack(fill='both', expand=True, padx=5, pady=5)
         
         Label(lf_dataset, text='Nombre:').grid(row=0, column=0, sticky='e')
@@ -146,7 +147,7 @@ class GUIDatasetClasificacion():
         lf_dataset_muestra.rowconfigure(0, weight=1)
         lf_dataset_muestra.columnconfigure(0, weight=1)
 
-        lf_dataset.rowconfigure(2, weight=1)
+        lf_dataset.rowconfigure(2, weight=3)
 #        lf_dataset.columnconfigure(0, weight=1)
         lf_dataset.columnconfigure(1, weight=1)
 #        lf_dataset.columnconfigure(2, weight=1)
@@ -165,16 +166,42 @@ class GUIDatasetClasificacion():
               grid(row=0, column=1, sticky='w')
         
         #Dataset de clasificación / Atributos
-        lf_dataset_atributos = LabelFrame(lf_dataset, text='Atributos')
+        lf_dataset_atributos = LabelFrame(lf_dataset,
+                                       text='Características de los atributos')
         lf_dataset_atributos.grid(row=3, column=1, sticky='nsew', columnspan=3,
                                   padx=5, pady=5)
         
-        Label(lf_dataset_atributos, text='Total:').grid(row=0, column=1,
-                                                        sticky='e')
-        self.v_atributos_total = StringVar(root, '-------')
-        Label(lf_dataset_atributos, textvariable=self.v_atributos_total).\
-              grid(row=0, column=2, sticky='w')
+        self.sb_v_tv_atributos = Scrollbar(lf_dataset_atributos)
+        self.sb_v_tv_atributos.grid(row=0, column=1, sticky='sn')
         
+        self.sb_h_tv_atributos = Scrollbar(lf_dataset_atributos,
+                                           orient='horizontal')
+        self.sb_h_tv_atributos.grid(row=1, column=0, sticky='ew')
+        
+        #TODO Debería leerlos de dc.describe(), pero no ahora que no lo tengo.
+        PROPIEDADES_ATRIBUTOS = ('count', 'unique', 'top', 'freq',
+                                 'mean', 'std', 'min', '25%', '50%', '75%',
+                                 'max')
+        self.tv_atributos = Treeview(lf_dataset_atributos,
+                                     columns=PROPIEDADES_ATRIBUTOS,
+                                     yscrollcommand=self.sb_v_tv_atributos.set,
+                                     xscrollcommand=self.sb_h_tv_atributos.set)
+        self.tv_atributos.grid(row=0, column=0, sticky='nsew')
+
+        self.tv_atributos.heading("#0", text="Nombre")
+        self.tv_atributos.column("#0", minwidth=50, width=100, stretch=False)
+        for i in PROPIEDADES_ATRIBUTOS:
+            self.tv_atributos.heading(i, text=i)
+            self.tv_atributos.column(i, minwidth=50, width=50, stretch=False)
+
+        
+        self.sb_v_tv_atributos.config(command=self.tv_atributos.yview)
+        self.sb_h_tv_atributos.config(command=self.tv_atributos.xview)
+        
+        lf_dataset_atributos.rowconfigure(0, weight=1)
+        lf_dataset_atributos.columnconfigure(0, weight=1)
+
+        lf_dataset.rowconfigure(3, weight=1)
 
 
     def abrir_dataset(self):
@@ -235,8 +262,45 @@ class GUIDatasetClasificacion():
         self.escribe_muestra()
 
         self.v_evidencias_total.set('{:,}'.format(self.dc.info_dataset_original.num_evidencias))
-        self.v_atributos_total.set('{:,}'.format(self.dc.num_atributos_dataset))
         
+#        self.v_atributos_total.set('{:,}'.format(self.dc.num_atributos_dataset))
+#        self.treeview.insert('', 'end', text="Item_"+str(self.i), values=(self.dose_entry.get()+" mg", self.modified_entry.get()))
+#        for i, atributo in range(self.dc.info_dataset_original.num_atributos), self.dc.info_dataset_original.info_atributos:
+#        self.tv_atributos(*self.tv_atributos.get_children())
+        self.tv_atributos.heading("#0", text="Nombre")
+        self.tv_atributos.column("#0", minwidth=50, width=100, stretch=False)
+        df = self.dc.info_dataset_original.info_atributos
+        for valor in df.index:
+            print(valor)
+        self.tv_atributos["displaycolumns"] = list(df.index)
+
+            
+        for i in df.index:
+            self.tv_atributos.heading(i, text=i)
+            self.tv_atributos.column(i, minwidth=50, width=50, stretch=False)
+
+        for i in self.tv_atributos.get_children():
+            self.tv_atributos.delete(i)
+        for atributo in df.columns:
+            valores = []
+            for valor in df[atributo]:
+#                if valor is 'nan':
+#                    valores.append('-----')
+#                else:
+                valores.append(valor)
+            self.tv_atributos.insert('', 'end', text=(atributo),
+                                     values=valores)
+#                                     values=df[df.columns[1:]])
+#                                     values=self.dc.info_dataset_original.info_atributos.loc[:,atributo])
+#df = df[df.columns[cols]]
+#        df = self.info_atributos
+#        for i in df.columns:
+#            print('{}\n{}'.format(i, df[i]))
+#            print()
+#            for j in df[i]:
+#                print(j)
+#            print()
+
         self.root.title('{} - {}'.format(APP_NAME, self.v_nombre_dataset.get()))
 
 
@@ -305,10 +369,10 @@ class GUIDatasetClasificacion():
         self.t_muestra.insert('end', 
                               self.dc.muestra(self._tamanyo_muestra))
         
-        self.t_muestra.insert('end', '\n\n#############################\n')
-        self.t_muestra.insert('end', 'DESCRIPCIÓN ATRIBUTOS Y CLASE\n')
-        self.t_muestra.insert('end', '#############################\n')
-        self.t_muestra.insert('end', self.dc.describe_atributos_y_clase())
+#        self.t_muestra.insert('end', '\n\n#############################\n')
+#        self.t_muestra.insert('end', 'DESCRIPCIÓN ATRIBUTOS Y CLASE\n')
+#        self.t_muestra.insert('end', '#############################\n')
+#        self.t_muestra.insert('end', self.dc.describe_atributos_y_clase())
 #        atributos_y_clase = self.dc.describe_atributos_y_clase()
 #        print(atributos_y_clase)
 #        print()
@@ -334,18 +398,18 @@ class GUIDatasetClasificacion():
 #            print(type(i))
         
         
-        print()
-        print('INFO_DATASET_ORIGINAL\n')
-        print(self.dc.info_dataset_original.__dict__)
-#        for i, j in enumerate(self.dc.info_dataset_original.__dict__):
-#            print('\t{} {}'.format(j, self.dc.info_dataset_original.__dict__[i]))
-        print()
-        for i in self.dc.info_dataset_original.__dict__:
-#            print('\t{}'.format(i))
-            print('\t{}: {}'.format(i, self.dc.info_dataset_original.__dict__[i]))
-        print()
-        print('\tUSO_MEMORIA: {}'.format(tamanyo_legible(self.dc.info_dataset_original.__dict__['uso_memoria'])))
-        
+#        print()
+#        print('INFO_DATASET_ORIGINAL\n')
+#        print(self.dc.info_dataset_original.__dict__)
+##        for i, j in enumerate(self.dc.info_dataset_original.__dict__):
+##            print('\t{} {}'.format(j, self.dc.info_dataset_original.__dict__[i]))
+#        print()
+#        for i in self.dc.info_dataset_original.__dict__:
+##            print('\t{}'.format(i))
+#            print('\t{}: {}'.format(i, self.dc.info_dataset_original.__dict__[i]))
+#        print()
+#        print('\tUSO_MEMORIA: {}'.format(tamanyo_legible(self.dc.info_dataset_original.__dict__['uso_memoria'])))
+#        
         print()
         print('INFO')
         print(self.dc.dataset_info())

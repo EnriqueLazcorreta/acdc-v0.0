@@ -8,13 +8,10 @@ Created on Tue Jul 24 23:37:15 2018
 
 import os, psutil, sys, hashlib, time
 
-def tiempo_transcurrido(segundos=None, inicio=None, fin=None, mensaje=''):
-    if segundos is None:
-        if inicio is None:
-            return 'No se puede calcular el tiempo transcurrido'
-        if fin is None:
-            fin = time.time()
-        segundos = fin - inicio
+def tiempo_transcurrido(inicio, mensaje='', fin=None):
+    if fin is None:
+        fin = time.time()
+    segundos = fin - inicio
             
     dias = 0
     horas = 0
