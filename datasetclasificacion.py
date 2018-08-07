@@ -9,7 +9,7 @@ TODO No parece funcionar bien con 'titanic', depurarlo a fondo.
 """
 
 
-import time, os, configparser as cp, pandas as pd, pickle
+import time, os, configparser as cp, pandas as pd, pickle, numpy as np
 from funcionesauxiliares import tiempo_transcurrido, memoria_dataset,\
                                 memoria_proceso, sha1_archivo, tamanyo_legible
 
@@ -21,7 +21,7 @@ class InfoDC():
     reducción se hace sobre el mismo pd.DataFrame, haciendo copias
     necesitaríamos demasiados recursos de memoria en datasets grandes. Para no
     perder las características de cada uno de los datasets reducidos las
-    guardaremos en objetos InfoDC, con información sobre:
+    guardaremos en objetos InfoDC de los datasets:
         
         - D_0 = Dataset original
         - D_1 = D_0 sin datos desconocidos (sin evidencias incompletas)
@@ -29,79 +29,26 @@ class InfoDC():
         - D_3 = D_2 sin duplicados
         - D_4 = D_3 sin incertidumbre (Máximo Catálogo Robusto de D_0)
     
-    Las características comunes a todos son:
-        
-        - clase_al_final:
-            posición de la clase en la evidencia, primer o último elemento.
-        - clase:
-            string con el nombre de la clase.
-        - atributos_constantes:
-            atributos que sólo tienen un valor en el dataset. Desde el punto de
-            vista del ARM el valor más importante del conjunto, ruido que
-            consume muchos recursos y no aporta nada a la Clasificación.
-            Es una lista de atributos. Su posición en el DC es importante para
-            poder reconstruir Catálogos a partir del DC original, ya que la
-            notación usada es D-I, siendo I los atributos eliminados cuando se
-            descubre que no aportan información para la solución del problema.
-    
-    Las características que pueden cambiar son:
-        
-        - num_evidencias
-            |D_0| = número de evidencias del DC.
-            |D_1| = número de evidencias completas.
-            |D_2| = número de evidencias completas sin atributos constantes.
-            |D_3| = número de evidencias completas (s.a.c.) diferentes. Tamaño del
-                    mayor Catálogo que contiene el DC.
-            |D_4| = número de evidencias completas robustas, sin incertidumbre. Tamaño
-                    del mayor Catálogo Robusto que contiene el DC.
-        - num_columnas
-        - num_atributos (realmente es num_columnas-1)
-        - atributos:
-            pandas.core.indexes.base.Index con los atributos que contiene.
-            
+    La información que necesito sobre todos estos datasets se obtiene con
+    pd.dataset.describe(). Esta clase se especializará en obtener información
+    específica del pd.DataFrame obtenido con describe().
     """
-    def __init__(self, dc, clase_al_final=True):
-        self.num_evidencias, self.num_columnas = dc.shape
-        self.num_atributos = self.num_columnas - 1
-        
-        self.clase = dc.columns[self.num_columnas-1] if clase_al_final\
-                                                     else dc.columns[0]
-        self.atributos = dc.columns[:self.num_columnas-1] if clase_al_final\
-                                                          else dc.columns[1:]
-        
-        #TODO Seguro que hay un modo de obtener mejor resultado
-        self.atributos_con_datos_desconocidos = []
-        atributos_y_clase = dc.describe(include='all')
-        for i, c in enumerate(atributos_y_clase.loc['count']):
-            if c < self.num_evidencias:
-                self.atributos_con_datos_desconocidos.append(dc.columns[i])
-#                print('¡La columna {} tiene {:,} valores!'.format(i, c))
-#                print('¡El atributo {} tiene {:,} valores!'.format(atributos_y_clase.columns[i], c))
+    def __init__(self, dc, clase):
+        self.clase = clase
+        self.columnas = dc.describe(include='all')
 
-        self.uso_memoria = 0
-        for i in range(self.num_columnas):
-            self.uso_memoria += dc.memory_usage(i, deep=True)[1]
-#        self.uso_memoria = dc.memory_usage(deep=True)
-        
-        self.info_atributos = dc.describe(include='all')
-        
-#        print(type(self.num_evidencias))
-#        print(type(self.num_columnas))
-#        print(type(self.num_atributos))
-#        print(type(self.clase))
-#        print(type(self.atributos))
-#        print(type(self.atributos_con_datos_desconocidos))
-#        print(type(self.info_atributos))
-#        print(self.info_atributos.shape)
-#        print(self.info_atributos.columns)
-#        print()
-#        df = self.info_atributos
-#        for i in df.columns:
-#            print('{}\n{}'.format(i, df[i]))
-#            print()
-#            for j in df[i]:
-#                print(j)
-#            print()
+
+    def num_evidencias(self):
+        return self.columnas[self.clase]['count']
+
+
+    def num_atributos(self):
+        return len(self.columnas.columns) - 1
+    
+    
+    def atributos(self):
+        return [columna for columna in self.columnas.columns \
+                if columna != self.clase]
 
 
 
@@ -149,8 +96,7 @@ class DatasetClasificacion():
                  mostrar_proceso=True, num_filas_a_leer=None,
                  obtener_catalogo_robusto=True, guardar_datos_proyecto=True,
                  mostrar_uso_ram=False, **kw):
-        """Constructor:
-        
+        """
         El DC se lee con pd.read_csv() y se guarda en un pd.DataFrame.
         
         Los DC descargados del repositorio KEEL, probados todos con este
@@ -161,7 +107,21 @@ class DatasetClasificacion():
         que pueda indicar dónde está la clase.
         
         Los valores desconocidos se marcan con '?' en UCI.
-                
+        
+        Propiedades:
+            
+            - clase_al_final: boolean
+            - ruta_datasets: string
+            - nombre_dataset: string
+            - ruta_resultados: string
+            - archivo_original: string con ruta, nombre y extensión del DC
+            - base_archivo_resultados: string con ruta y nombre, sin extensión
+            - dataset: pd.DataFrame con los distintos datasets del proceso
+            - clase: string
+            - info_dataset_original: InfoDC
+            - evidencias_incompletas: numpy.ndarray
+
+        
         **kw se podrá completar con las opciones de pandas.read_csv().
         """
         #TODO Aclarar si necesito estas variables,
@@ -170,14 +130,19 @@ class DatasetClasificacion():
         self.__existen_caracterizaciones_con_incertidumbre = None
         self.__tiene_atributos_constantes = None
         
-        
+        self.clase_al_final = clase_al_final
+
+        """
+        TODO ¿Dejo las rutas sin '/' final? ¿O uso módulo os para determinar
+             si añado '/'?"""
         self.ruta_datasets = ruta_datasets
         self.nombre_dataset = nombre_dataset
         self.ruta_resultados = ruta_resultados
+        """
+        TODO Las extensiones deberían estar en una lista guardada en el archivo
+             .cfg por si el usuario quiere modificarlas."""
         self.archivo_original = ruta_datasets + '/' + nombre_dataset + '.csv'
         self.base_archivo_resultados = ruta_resultados + '/' + nombre_dataset
-        #TODO Las extensiones deberían estar en una lista guardada en el
-        #     archivo .cfg por si el usuario quiere modificarlas.
         
         self.mostrar_proceso = mostrar_proceso
         
@@ -189,137 +154,117 @@ class DatasetClasificacion():
 
         self.__dataset_leido = False if num_filas_a_leer is None else True
         
+        self.clase = self.dataset.columns[self.dataset.shape[1]-1] \
+                     if clase_al_final else self.dataset.columns[0]
+
         #TODO Crear un InfoDC distinto cada vez que cambie self.dataset.
         #TODO Eliminar todas las variables de DC cuando tenga todos los InfoDC.
-        self.info_dataset_original = InfoDC(self.dataset, clase_al_final)
-
-        self.atributos = self.dataset.columns[:self.info_dataset_original.num_columnas-1] \
-                     if clase_al_final else self.dataset.columns[1:]
-
-        if self.mostrar_proceso:
-            print('DATASET ORIGINAL: {:,} x {:,}'.format(self.dataset.shape[0],
-                                                      self.dataset.shape[1]-1))
-
-        if mostrar_uso_ram:
-            print('\t' + memoria_dataset(self.dataset, ' usados por el '\
-                                        'dataset original'))
-            print('\t' + memoria_proceso())
-
-        if not obtener_catalogo_robusto:
-            return
-
-        self.elimina_evidencias_incompletas()
+        self.info_dataset_original = InfoDC(self.dataset, self.clase)
         
-        if guardar_resultados:
-            self.guarda_datos_desconocidos()
-#        borrar = self.lee_datos_desconocidos()
-#        print(self.evidencias_con_datos_desconocidos.shape)
-#        print(borrar.shape)
-#        del borrar
-
         if self.mostrar_proceso:
-            num_evidencias_incompletas = self.info_dataset_original.num_evidencias -\
-                                         self.num_evidencias_completas
+            print('{:,} x {:,} (DATASET ORIGINAL)'.format(self.dataset.shape[0],
+                                                      self.dataset.shape[1]-1))
+        if mostrar_uso_ram:
+            print('\t{} usados por el dataset original'.\
+                  format(memoria_dataset(self.dataset)))
+            print('\t{} usados por el proceso'.format(memoria_proceso()))
+        self.elimina_evidencias_incompletas()
+        self.info_dataset_sin_datos_desconocidos = \
+                                           InfoDC(self.dataset, self.clase)
+        
+        if self.mostrar_proceso:
+            num_evidencias_incompletas = \
+                      self.info_dataset_original.num_evidencias() - \
+                      self.info_dataset_sin_datos_desconocidos.num_evidencias()
             if num_evidencias_incompletas:
-                print('\tEliminadas', '{:,}'.format(num_evidencias_incompletas),
-                      'evidencias incompletas')
+                print('\tEliminadas {:,} evidencias incompletas'. \
+                      format(int(num_evidencias_incompletas)))
             else:
                 print('\tNo hay evidencias incompletas')
-
-            print('DATASET SIN DATOS DESCONOCIDOS: {:,} x {:,}'. \
+            print('{:,} x {:,} (DATASET SIN DATOS DESCONOCIDOS)'. \
                   format(self.dataset.shape[0], self.dataset.shape[1]-1))
 
         if mostrar_uso_ram:
-            print('\t' + memoria_dataset(self.dataset, ' usados por el '\
-                                  'dataset sin evidencias incompletas'))
-            print('\t' + memoria_proceso())
+            print('\t{} usados por el dataset sin evidencias incompletas'. \
+                  format(memoria_dataset(self.dataset)))
+            print('\t{} usados por el proceso'.format(memoria_proceso()))
 
         self.elimina_atributos_constantes()
+        self.info_dataset_sin_atributos_constantes = \
+                                           InfoDC(self.dataset, self.clase)
         
         if self.mostrar_proceso:
-            if self.num_atributos_constantes:
-                print('\tQuedan {} atributos al eliminar {} atributos '\
-                      'constantes'.format(self.dataset.shape[1]-1,
-                                          self.num_atributos_constantes))
-            else:
+            num_atributos_constantes = \
+                self.info_dataset_original.num_atributos() - \
+                self.info_dataset_sin_atributos_constantes.num_atributos()
+            if not num_atributos_constantes:
                 print('\tNo hay atributos constantes')
-
-            print('DATASET SIN ATRIBUTOS CONSTANTES:', '{:,} x {:,}'.\
+            print('{:,} x {:,} (DATASET SIN ATRIBUTOS CONSTANTES)'.\
                   format(self.dataset.shape[0], self.dataset.shape[1]-1))
-
         if mostrar_uso_ram:
-            print('\t' + memoria_dataset(self.dataset, ' usados por el '\
-                              'dataset sin evidencias completas ni atributos '\
-                              'constantes'))
-            print('\t' + memoria_proceso())
+            print('\t{} usados por el dataset sin evidencias incompletas ' \
+                  'ni atributos constantes'.\
+                  format(memoria_dataset(self.dataset)))
+            print('\t{} usados por el proceso'.format(memoria_proceso()))
 
 
         #TODO Guardar los índices de las evidencias duplicadas
         self.elimina_evidencias_duplicadas()
+        self.info_catalogo = InfoDC(self.dataset, self.clase)
 
         if self.mostrar_proceso:
-            num_evidencias_duplicadas = self.num_evidencias_completas -\
-                                        self.num_evidencias_catalogo
+            num_evidencias_duplicadas = \
+                     self.info_dataset_sin_datos_desconocidos.num_evidencias() -\
+                     self.info_catalogo.num_evidencias()
             if num_evidencias_duplicadas:
-                print('\tEliminadas', '{:,}'.format(num_evidencias_duplicadas),
-                      'evidencias completas duplicadas')
+                print('\tEliminadas {:,} evidencias completas duplicadas'. \
+                      format(int(num_evidencias_duplicadas)))
             else:
                 print('\tNo hay evidencias completas duplicadas')
 
-            print('CATÁLOGO: {:,} x {:,}'.format(self.dataset.shape[0],
+            print('{:,} x {:,} (CATÁLOGO)'.format(self.dataset.shape[0],
                                                self.dataset.shape[1]-1))
-
-        if guardar_resultados:
-            if self.mostrar_proceso:
-                print('\tGuardando catálogo')
-
-            self.guarda_catalogo()
-
         if mostrar_uso_ram:
-            print('\t{}' + memoria_dataset(self.dataset,
-                  ' usados por el catálogo'))
-            print('\t' + memoria_proceso())
+            print('\t{} usados por el catálogo'.\
+                  format(memoria_dataset(self.dataset)))
+            print('\t{} usados por el proceso'.format(memoria_proceso()))
 
         
-        #TODO Debería guardar los índices de las evidencias con incertidumbre
         self.elimina_evidencias_con_incertidumbre()
+        self.info_catalogo_robusto = InfoDC(self.dataset, self.clase)
 
-        self.num_evidencias_robustas = self.dataset.shape[0]
-        self.num_evidencias_con_incertidumbre = self.num_evidencias_catalogo -\
-                                                self.num_evidencias_robustas
+        num_evidencias_con_incertidumbre = self.info_catalogo.num_evidencias()\
+                                  - self.info_catalogo_robusto.num_evidencias()
 
         if self.mostrar_proceso:
-            print('CATÁLOGO ROBUSTO: {:,} x {:,}'.format(self.dataset.shape[0],
+            print('{:,} x {:,} (CATÁLOGO ROBUSTO)'.format(self.dataset.shape[0],
                                                       self.dataset.shape[1]-1))
-
-            if self.num_evidencias_con_incertidumbre:
-                print('\tEliminadas', '{:,} evidencias completas con '\
-                 'incertidumbre'.format(self.num_evidencias_con_incertidumbre))
+            if num_evidencias_con_incertidumbre:
+                print('\tEliminadas {:,} evidencias completas con '\
+                 'incertidumbre'.format(num_evidencias_con_incertidumbre))
             else:
                 print('\tNo hay evidencias completas con incertidumbre')
-
         if mostrar_uso_ram:
-            print('\t' + memoria_dataset(self.dataset, ' usados por el '\
-                                         'catálogo robusto'))
-            print('\t' + memoria_proceso())
+            print('\t{} usados por el catálogo robusto'.\
+                  format(memoria_dataset(self.dataset)))
+            print('\t{} usados por el proceso'.format(memoria_proceso()))
         
-
         self.contiene_incertidumbre = True if \
-                               self.num_evidencias_con_incertidumbre else False
+                                    num_evidencias_con_incertidumbre else False
 
         if guardar_resultados:
             if self.mostrar_proceso:
                 print('\tGuardando catálogo robusto')
-
             self.guarda_catalogo_robusto()
-            
 
         if guardar_datos_proyecto:
+            if self.mostrar_proceso:
+                print('\tGuardando datos proyecto')
             self.guarda_datos_proyecto()
+
 
     def lee_dataset(self, num_filas_a_leer=None, valores_na='?'):
         try:
-            #TODO Usar módulo os para determinar si añado '/' a la ruta
             dataset = pd.read_csv(self.archivo_original,
                                   na_values=valores_na,
                                   skipinitialspace=True,
@@ -332,27 +277,14 @@ class DatasetClasificacion():
         
 
     def elimina_evidencias_incompletas(self):
-        #TODO Revisar otros métodos de obtener lo mismo: 
-        #          pd.Index.difference(pd.Index)
-        #     Primero crearía el índice de dataset y después de dropna lo
-        #     vuelvo a crear y calculo la diferencia.
-#        idx1 = pd.Index(self.dataset)
-        self.evidencias_con_datos_desconocidos = \
+        """Guarda el índice de las evidencias incompletas y las elimina"""
+        self.evidencias_incompletas = \
                                     pd.isnull(self.dataset).any(1).nonzero()[0]
-        
         self.dataset.dropna(inplace=True)
-        self.num_evidencias_completas = self.dataset.shape[0]
-#        idx2 = pd.Index(self.dataset)
-#        print(idx1.difference(idx2).shape)
-#        print(self.evidencias_con_datos_desconocidos.shape)
-        #TODO En census indica 968 cuando se supone que hay 977 ev. incompletas
-        #     En mushroom-UCI ambos son 2480 (correcto)
-
 
 
     def elimina_atributos_constantes(self):
         self.atributos_constantes = {}
-        self.num_atributos_constantes = 0
         for indice, atributo in enumerate(self.dataset.columns):
             if len(self.dataset[atributo].unique()) == 1:
                 if self.mostrar_proceso:
@@ -361,43 +293,33 @@ class DatasetClasificacion():
                           self.dataset[atributo].unique()[0]))
                 self.atributos_constantes[atributo] = indice
                 self.dataset.drop(atributo, 1, inplace=True)
-                self.atributos = self.atributos.drop(atributo)
-                self.num_atributos_constantes += 1
 
 
-    #TODO Guardar los índices de las evidencias duplicadas
+    #TODO Una vez tengo indices_duplicados ¿Es más rápido usarlo para eliminar duplicados del DC?
     def elimina_evidencias_duplicadas(self):
-#        idx1 = pd.Index(self.dataset)
+        indices_duplicados = self.dataset.duplicated()
+        self.lista_indices_duplicados = str([indice for indice, valor in indices_duplicados.iteritems() if valor])
         self.dataset.drop_duplicates(inplace=True)
-        self.num_evidencias_catalogo, self.num_columnas_catalogo =\
-                                                             self.dataset.shape
-#        idx2 = pd.Index(self.dataset)
-#        print(idx1.difference(idx2).shape)
 
+
+    """
+    TODO Una vez tengo indices_con_incertidumbre ¿Es más rápido usarlo para 
+         eliminar incertidumbre del DC?"""
     def elimina_evidencias_con_incertidumbre(self):
-        self.dataset.drop_duplicates(self.atributos, keep=False, inplace=True)
-        self.num_evidencias_catalogo_robusto, \
-                        self.num_columnas_catalogo_robusto = self.dataset.shape
-
-
-    def guardar_resultados(self, guardar=None):
-        if guardar is not None:
-            self.guardar_resultados = guardar
-        return self.guardar_resultados
+        atributos = self.info_dataset_sin_atributos_constantes.atributos()
+        self.indices_con_incertidumbre = self.dataset.duplicated(atributos,
+                                                                 keep=False)
+        self.dataset.drop_duplicates(atributos, keep=False, inplace=True)
 
 
     def guarda_resultado(self, archivo):
         try:
             self.dataset.to_csv(archivo, sep=',', index=False)
             if self.mostrar_proceso:
-                print('\t' + archivo)
+                print('\t\t' + archivo)
         except Exception as e:
             print('####### ERROR ######\n', e, '\n####### ERROR ######')
 
-
-    def guarda_catalogo(self):
-        self.guarda_resultado(self.get_notacion_D_I(self.atributos_constantes,
-                                                    '.catalogo.csv'))
 
     def guarda_catalogo_robusto(self):
         self.guarda_resultado(self.get_notacion_D_I(self.atributos_constantes,
@@ -408,72 +330,59 @@ class DatasetClasificacion():
         archivo_proyecto = cp.ConfigParser()
         archivo_proyecto.optionxform = lambda option: option
         
-        archivo_proyecto['DEFAULT'] = {\
-                'Ruta datasets': self.ruta_datasets,
-                'Nombre dataset': self.nombre_dataset,
-                'Ruta resultados': self.ruta_resultados,
-                'sha1': sha1_archivo(self.archivo_original),
-             'Tamaño': tamanyo_legible(os.path.getsize(self.archivo_original))}
+        archivo_proyecto['General'] = {\
+            'Ruta datasets': self.ruta_datasets,
+            'Ruta resultados': self.ruta_resultados}
 
-        archivo_proyecto['DEFAULT']['Num evidencias'] = \
-                                 str(self.info_dataset_original.num_evidencias)
-        archivo_proyecto['DEFAULT']['Num atributos'] = \
-                                  str(self.info_dataset_original.num_atributos)
-        archivo_proyecto['DEFAULT']['Clase'] = self.info_dataset_original.clase
-        archivo_proyecto['DEFAULT']['Num evidencias incompletas'] = \
-               str(self.info_dataset_original.num_evidencias - self.num_evidencias_completas)
-        archivo_proyecto['DEFAULT']['Num atributos constantes'] = \
-                                             str(self.num_atributos_constantes)
-        archivo_proyecto['DEFAULT']['Num evidencias con incertidumbre'] = \
-                                     str(self.num_evidencias_con_incertidumbre)
+        dc_original = self.info_dataset_original
+        dc_sin_dd = self.info_dataset_sin_datos_desconocidos
+        archivo_proyecto['Dataset de Clasificación'] = {\
+            'Nombre dataset': self.nombre_dataset,
+            'sha1': sha1_archivo(self.archivo_original),
+            'Tamaño': tamanyo_legible(os.path.getsize(self.archivo_original)),
+            'Clase al final': self.clase_al_final,
+            'Num evidencias': str(dc_original.num_evidencias()),
+            'Num atributos': str(dc_original.num_atributos()),
+            'Clase': dc_original.clase,
+            'Num evidencias incompletas': str(dc_original.num_evidencias() - \
+                                              dc_sin_dd.num_evidencias()),
+            'Evidencias incompletas': str(list(self.evidencias_incompletas)),
+            'Num atributos constantes': str(len(self.atributos_constantes)),
+            'Evidencias completas duplicadas (eliminadas)': \
+                                                 self.lista_indices_duplicados}
 
-        if self.num_atributos_constantes:
+        if len(self.atributos_constantes):
             archivo_proyecto['Atributos constantes eliminados'] = {}
             for atributo in self.atributos_constantes:
-                archivo_proyecto['Atributos constantes eliminados'][atributo] =\
+                archivo_proyecto['Atributos constantes eliminados'][atributo]=\
                                        str(self.atributos_constantes[atributo])
 
-        
+        #TODO Debería guardar ¿también? las columnas del DC original
         archivo_proyecto['Columnas catálogo'] = {}
         for columna in self.dataset.columns:
             archivo_proyecto['Columnas catálogo'][columna] = \
                                                str(self.dataset[columna].dtype)
 
-        archivo_proyecto['Catálogo'] = {}
-        archivo_proyecto['Catálogo']['Num evidencias'] = \
-                                           str(self.num_evidencias_catalogo)
-        archivo_proyecto['Catálogo']['Num atributos'] = \
-                                         str(self.num_columnas_catalogo - 1)
+        num_evidencias_con_incertidumbre = self.info_catalogo.num_evidencias()\
+                                  - self.info_catalogo_robusto.num_evidencias()
+        archivo_proyecto['Catálogo'] = {\
+            'Num evidencias': str(self.info_catalogo.num_evidencias()),
+            'Num atributos': str(self.info_catalogo.num_atributos),
+            'Num evidencias con incertidumbre': \
+                                    str(int(num_evidencias_con_incertidumbre)),
+            'Evidencias con incertidumbre': str([indice for indice, valor \
+                      in self.indices_con_incertidumbre.iteritems() if valor])}
 
-        archivo_proyecto['Catálogo Robusto'] = {}
-        archivo_proyecto['Catálogo Robusto']['Num evidencias'] = \
-                                      str(self.num_evidencias_catalogo_robusto)
-        archivo_proyecto['Catálogo Robusto']['Num atributos'] = \
-                                    str(self.num_columnas_catalogo_robusto - 1)
+        archivo_proyecto['Catálogo Robusto'] = {\
+            'Num evidencias': str(self.info_catalogo_robusto.num_evidencias()),
+            'Num atributos': str(self.info_catalogo_robusto.num_atributos)}
         
-        with open(self.base_archivo_resultados + '.cfg', 'w') as datos_proyecto:
-            archivo_proyecto.write(datos_proyecto)
+        with open(self.base_archivo_resultados+'.cfg', 'w') as archivo:
+            archivo_proyecto.write(archivo)
+
+        if self.mostrar_proceso:
+            print('\t\t' + self.base_archivo_resultados + '.cfg')
         
-
-    def guarda_datos_desconocidos(self):
-        with open(self.base_archivo_resultados + \
-                  '.datos-desconocidos.acdc', 'wb') as archivo:
-            pickle.dump(self.evidencias_con_datos_desconocidos, archivo)
-        
-
-    #TODO Experimental. Para leer el csv he de indicar qué filas saltar, no las
-    #     que quiero leer
-    def lee_datos_desconocidos(self):
-        with open(self.base_archivo_resultados +
-                  '.datos-desconocidos.acdc', 'rb') as archivo:
-            self.evidencias_con_datos_desconocidos = pickle.load(archivo)
-        filas_a_excluir = [i for i in range(self.info_dataset_original.\
-                                            num_evidencias) \
-                           if i not in self.evidencias_con_datos_desconocidos]
-
-        #TODO Encapsular en try/except.
-        return pd.read_csv(self.archivo_original, skiprows=filas_a_excluir)
-
 
     #TODO self.dataset puede cambiar, tenerlo en cuenta.
     def muestra(self, num_filas):
@@ -491,32 +400,22 @@ class DatasetClasificacion():
 
 
     def atributos_con_datos_desconocidos(self):
-        total = self.info_dataset_original.num_evidencias
+        total = self.info_dataset_original.num_evidencias()
         atributos = []
         
-        
-        atributos_y_clase = self.dataset.describe(include='all')
+        atributos_y_clase = self.info_dataset_sin_datos_desconocidos.atributos
         for i, c in enumerate(atributos_y_clase.loc['count']):
             if c < total:
                 atributos.append(self.dataset.columns[i])
                 print('\t¡El atributo {} ({}) tiene {:,} valores!'.format(atributos_y_clase.columns[i], i, c))
         
-        
-        
-#        for i, c in enumerate(self.atributos[0]):
-#            atributos.append((i, c))
-#            if c < total:
-#                atributos.append(self.dataset.columns[i])
-#                print('¡La columna {} tiene {} valores!'.format(i, c))
-#                print('¡El atributo {} tiene {} valores!'.format(atributos_y_clase.columns[i], c))
         return atributos
 
 
     def get_notacion_D_I(self, I, extension='.csv'):
         archivo = self.base_archivo_resultados
-        if self.num_atributos_constantes:
-            for indice in I:
-                archivo += '-' + str(I[indice])
+        for indice in I:
+            archivo += '-' + str(I[indice])
         return archivo + extension
 
 
@@ -546,7 +445,7 @@ if __name__ == '__main__':
     
     num_archivos = len(archivos_KEEL)
 
-#    for i, nombre_dataset in enumerate(archivos_KEEL):
+    for i, nombre_dataset in enumerate(archivos_KEEL):
 #    for i, nombre_dataset in enumerate(['abalone']):
 #TODO En http://sci2s.ugr.es/keel/dataset.php?cod=52 dicen:
 #           "In this version, 3 duplicated instances have been removed from the 
@@ -557,7 +456,7 @@ if __name__ == '__main__':
 #    for i, nombre_dataset in enumerate(['adult-UCI']):
 #    for i, nombre_dataset in enumerate(['adult-con-test-UCI']):
 #    for i, nombre_dataset in enumerate(['balloons']):
-    for i, nombre_dataset in enumerate(['breast']):
+#    for i, nombre_dataset in enumerate(['breast']):
 #    for i, nombre_dataset in enumerate(['census']):
 #    for i, nombre_dataset in enumerate(['hepatitis']):
 #    for i, nombre_dataset in enumerate(['kddcup']):
@@ -579,9 +478,9 @@ if __name__ == '__main__':
         #     adult-UCI con la clase al final y mushroom-UCI al principio
 #        clase_al_final = False if '-UCI' in nombre_dataset else True
         clase_al_final = True
-        guardar_resultados = True
+        guardar_resultados = False
         num_filas_a_leer = None
-        mostrar_proceso = True
+        mostrar_proceso = False
         mostrar_tiempos = False
         mostrar_uso_ram = False
         obtener_catalogo_robusto = True
@@ -623,9 +522,6 @@ if __name__ == '__main__':
             print('\b\b\b\b', end='')
             print('{:.0%}'.format((i+1)/num_archivos), end='')
         
-#        if i == len(archivos_KEEL) // 2:
-#            break
-
     print()
     print(num_datasets_con_incertidumbre, 'datasets con incertidumbre')
     print(num_datasets_robustos, 'datasets robustos')
