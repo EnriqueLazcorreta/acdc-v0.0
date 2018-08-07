@@ -67,7 +67,8 @@ class GUIDatasetClasificacion():
         self.menubar.add_cascade(label='Archivo', menu=m_archivo)
         
         m_proyecto = Menu(self.menubar, tearoff=0)
-        m_proyecto.add_command(label='Abrir', command=self.abrir_proyecto)
+        m_proyecto.add_command(label='Abrir', command=self.abrir_proyecto,
+                               state="disabled")
         m_proyecto.add_separator()
         m_proyecto.add_checkbutton(label='Clase al final',
                                    onvalue=True, offvalue=False,
@@ -258,7 +259,6 @@ class GUIDatasetClasificacion():
                                 if self._rutas_relativas.get() else \
                                 os.path.dirname(nombre))
         self.limpia_datos()
-        
         self.root.update()
 
         #TODO Usar hilos o procesos para leer grandes datasets sin problemas
@@ -284,18 +284,17 @@ class GUIDatasetClasificacion():
                      mostrar_uso_ram=False)
 
         self.escribe_muestra()
-
         self.v_evidencias_total.set('{:,}'.\
-                          format(self.dc.info_dataset_original.num_evidencias))
+            format(self.dc.info_dataset_original.num_evidencias()))
         self.v_evidencias_completas.set('{:,}'.\
-            format(self.dc.info_dataset_sin_datos_desconocidos.num_evidencias))
+          format(self.dc.info_dataset_sin_datos_desconocidos.num_evidencias()))
         self.v_evidencias_catalogo.set('{:,}'.\
-            format(self.dc.info_catalogo.num_evidencias))
+            format(self.dc.info_catalogo.num_evidencias()))
         self.v_evidencias_robustas.set('{:,}'.\
-            format(self.dc.info_catalogo_robusto.num_evidencias))
+            format(self.dc.info_catalogo_robusto.num_evidencias()))
         
         #TODO Mover a función.
-        df = self.dc.info_dataset_original.info_atributos
+        df = self.dc.info_dataset_original.columnas
 
         self.tv_clase["displaycolumns"] = list(df.index)
         self.tv_atributos["displaycolumns"] = list(df.index)
@@ -305,11 +304,6 @@ class GUIDatasetClasificacion():
             self.tv_clase.column(i, minwidth=50, width=50, stretch=False)
             self.tv_atributos.heading(i, text=i)
             self.tv_atributos.column(i, minwidth=50, width=50, stretch=False)
-
-#        for i in self.tv_clase.get_children():
-#            self.tv_clase.delete(i)
-#        for i in self.tv_atributos.get_children():
-#            self.tv_atributos.delete(i)
 
         #TODO En australian, aunque guarda bien los valores no los muestra todos.
         for atributo in df.columns:
@@ -413,7 +407,7 @@ class GUIDatasetClasificacion():
     #TODO Tratar excepciones para que no se quede habilitada la escritura
     def escribe_muestra(self):
         self.t_muestra['state'] = 'normal'
-#        self.t_muestra.delete(1.0, 'end')
+        self.t_muestra.delete(1.0, 'end')
 #        self.t_muestra.insert('end', tiempo_transcurrido(time.time() - inicio) \
 #                              + ' leyendo catálogo\n')
 #        self.t_muestra.insert('end', '\n')
@@ -472,10 +466,13 @@ class GUIDatasetClasificacion():
         print('INFO')
         print(self.dc.dataset_info())
         
-        print()
-        print('Atributos con DD')
-        print(self.dc.atributos_con_datos_desconocidos())
-        print()
+        """
+        XXX Cuando la llamo desdee la GUI salta un error porque el dataset ya
+            no tiene los atributos constantes"""
+#        print()
+#        print('Atributos con DD')
+#        print(self.dc.atributos_con_datos_desconocidos())
+#        print()
         
         self.t_muestra.insert('end', '\n\n')
         self.t_muestra['state'] = 'disabled'

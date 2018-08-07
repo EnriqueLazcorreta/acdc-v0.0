@@ -399,15 +399,19 @@ class DatasetClasificacion():
         return self.dataset.info()
 
 
+    """
+    XXX Cuando la llamo desdee la GUI salta un error porque el dataset ya no
+        tiene los atributos constantes"""
     def atributos_con_datos_desconocidos(self):
         total = self.info_dataset_original.num_evidencias()
         atributos = []
         
-        atributos_y_clase = self.info_dataset_sin_datos_desconocidos.atributos
+        atributos_y_clase = self.info_dataset_original.columnas
         for i, c in enumerate(atributos_y_clase.loc['count']):
             if c < total:
                 atributos.append(self.dataset.columns[i])
-                print('\t¡El atributo {} ({}) tiene {:,} valores!'.format(atributos_y_clase.columns[i], i, c))
+                print('\t¡El atributo {} ({}) tiene {:,} valores!'. \
+                      format(atributos_y_clase.columns[i], i, c))
         
         return atributos
 
