@@ -469,10 +469,10 @@ class GUIDatasetClasificacion():
         """
         XXX Cuando la llamo desdee la GUI salta un error porque el dataset ya
             no tiene los atributos constantes"""
-#        print()
-#        print('Atributos con DD')
-#        print(self.dc.atributos_con_datos_desconocidos())
-#        print()
+        print()
+        print('Atributos con DD')
+        print(self.dc.atributos_con_datos_desconocidos())
+        print()
         
         self.t_muestra.insert('end', '\n\n')
         self.t_muestra['state'] = 'disabled'

@@ -409,7 +409,7 @@ class DatasetClasificacion():
         atributos_y_clase = self.info_dataset_original.columnas
         for i, c in enumerate(atributos_y_clase.loc['count']):
             if c < total:
-                atributos.append(self.dataset.columns[i])
+                atributos.append(atributos_y_clase.columns[i])
                 print('\t¡El atributo {} ({}) tiene {:,} valores!'. \
                       format(atributos_y_clase.columns[i], i, c))
         
