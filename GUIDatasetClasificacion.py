@@ -7,7 +7,7 @@ Created on Tue Jul 31 09:56:17 2018
 '''
 
 from tkinter import Tk, Menu, StringVar, Text, Listbox, Button, BooleanVar, \
-                    Toplevel
+                    Toplevel, IntVar
 from tkinter.ttk import LabelFrame, Scrollbar, Label, Style, Treeview, \
                         Progressbar
 from tkinter.filedialog import askopenfilename, askdirectory
@@ -97,10 +97,27 @@ class GUIDatasetClasificacion():
         self.menubar.add_cascade(label='Configuración', menu=self.m_configuracion)
         
         m_ver = Menu(self.menubar, tearoff=0)
-#        m_ver.add_radiobutton(label='Dataset original', onvalue=True,
-#                              offvalue=False, variable=self._mostrar_proceso,
-#                              state='disabled')
-        m_proyecto.add_separator()
+        self.v_tipo_dataset = StringVar(self.root, 'Dataset original')
+        m_ver.add_radiobutton(label='Dataset original',
+                              value='Dataset original',
+                              variable=self.v_tipo_dataset,
+                              command=self.muestra_atributos_y_clase)
+        m_ver.add_radiobutton(label='Dataset sin evidencias incompletas',
+                              value='Dataset sin evidencias incompletas',
+                              variable=self.v_tipo_dataset,
+                              command=self.muestra_atributos_y_clase)
+        m_ver.add_radiobutton(label='Dataset sin atributos constantes',
+                              value='Dataset sin atributos constantes',
+                              variable=self.v_tipo_dataset,
+                              command=self.muestra_atributos_y_clase)
+        m_ver.add_radiobutton(label='Catálogo', value='Catálogo',
+                              variable=self.v_tipo_dataset,
+                              command=self.muestra_atributos_y_clase)
+        m_ver.add_radiobutton(label='Catálogo Robusto',
+                              value='Catálogo Robusto',
+                              variable=self.v_tipo_dataset,
+                              command=self.muestra_atributos_y_clase)
+        m_ver.add_separator()
         m_ver.add_checkbutton(label='Log del proceso', onvalue=True,
                               offvalue=False, variable=self._mostrar_proceso,
                               state='disabled')
@@ -190,8 +207,9 @@ class GUIDatasetClasificacion():
         lf_dataset_clase_y_atributos.grid(row=3, column=1, sticky='nsew',
                                           columnspan=3, padx=5, pady=5)
         
-        PROPIEDADES_ATRIBUTOS = ('count', 'unique', 'top', 'freq', 'mean',
-                                 'std', 'min', '25%', '50%', '75%', 'max')
+        PROPIEDADES_ATRIBUTOS = ('Nombre', 'count', 'unique', 'top', 'freq',
+                                 'mean', 'std', 'min', '25%', '50%', '75%',
+                                 'max')
 
         self.sb_h_tv_clase = Scrollbar(lf_dataset_clase_y_atributos,
                                        orient='horizontal')
@@ -202,8 +220,8 @@ class GUIDatasetClasificacion():
                                  xscrollcommand=self.sb_h_tv_clase.set)
         self.tv_clase.grid(row=0, column=0, sticky='ew')
         self.sb_h_tv_clase.config(command=self.tv_clase.xview)
-        self.tv_clase.heading("#0", text="Nombre")
-        self.tv_clase.column("#0", minwidth=50, width=100, stretch=False)
+        self.tv_clase.heading("#0", text="#")
+        self.tv_clase.column("#0", minwidth=30, width=40, stretch=False)
 
         self.sb_v_tv_atributos = Scrollbar(lf_dataset_clase_y_atributos)
         self.sb_v_tv_atributos.grid(row=2, column=1, sticky='sn')
@@ -218,8 +236,8 @@ class GUIDatasetClasificacion():
         self.tv_atributos.bind('<ButtonRelease-1>', self.selectItem)
         self.sb_v_tv_atributos.config(command=self.tv_atributos.yview)
         self.sb_h_tv_atributos.config(command=self.tv_atributos.xview)
-        self.tv_atributos.heading("#0", text="Nombre")
-        self.tv_atributos.column("#0", minwidth=50, width=100, stretch=False)        
+        self.tv_atributos.heading("#0", text="#")
+        self.tv_atributos.column("#0", minwidth=30, width=40, stretch=False)        
         
         for i in PROPIEDADES_ATRIBUTOS:
             self.tv_clase.heading(i, text=i)
@@ -260,7 +278,8 @@ class GUIDatasetClasificacion():
         self.v_ruta_dataset.set(os.path.relpath(os.path.dirname(nombre)) \
                                 if self._rutas_relativas.get() else \
                                 os.path.dirname(nombre))
-        self.limpia_datos()
+        self.limpia_muestra()
+        self.limpia_atributos_y_clase()
         self.root.update()
 
         #TODO Usar hilos o procesos para leer grandes datasets sin problemas
@@ -366,14 +385,17 @@ class GUIDatasetClasificacion():
                 print(ruta)
 
 
-    def limpia_datos(self):
-        self.t_muestra['state'] = 'normal'
-        self.t_muestra.delete(1.0, 'end')
-        self.t_muestra['state'] = 'disabled'
+    def limpia_atributos_y_clase(self):
         for i in self.tv_clase.get_children():
             self.tv_clase.delete(i)
         for i in self.tv_atributos.get_children():
             self.tv_atributos.delete(i)
+        
+
+    def limpia_muestra(self):
+        self.t_muestra['state'] = 'normal'
+        self.t_muestra.delete(1.0, 'end')
+        self.t_muestra['state'] = 'disabled'
 
     def tamanyo_muestra(self, tamanyo):
         nuevo_tamanyo = askinteger('Muestra',
@@ -407,30 +429,37 @@ class GUIDatasetClasificacion():
 
 
     def muestra_atributos_y_clase(self):
-        df = self.dc.info_dataset_original.columnas
+        self.limpia_atributos_y_clase()
+        if self.v_tipo_dataset.get() == 'Dataset original':
+            df = self.dc.info_dataset_original.columnas
+        elif self.v_tipo_dataset.get() == 'Dataset sin evidencias incompletas':
+            df = self.dc.info_dataset_sin_datos_desconocidos.columnas
+        elif self.v_tipo_dataset.get() == 'Dataset sin atributos constantes':
+            df = self.dc.info_dataset_sin_atributos_constantes.columnas
+        elif self.v_tipo_dataset.get() == 'Catálogo':
+            df = self.dc.info_catalogo.columnas
+        elif self.v_tipo_dataset.get() == 'Catálogo Robusto':
+            df = self.dc.info_catalogo_robusto.columnas
         
-#        self.tv_clase["displaycolumns"] = list(df.index)
-#        self.tv_atributos["displaycolumns"] = list(df.index)
-        self.tv_clase["columns"] = list(df.index)
-        self.tv_atributos["columns"] = list(df.index)
+        self.tv_clase["columns"] = list(df.index).insert(0, 'Nombre')
+        self.tv_atributos["columns"] = list(df.index).insert(0, 'Nombre')
 
+        self.tv_clase.heading('Nombre', text='Nombre')
+        self.tv_atributos.heading('Nombre', text='Nombre')
         for i in df.index:
             self.tv_clase.heading(i, text=i)
             self.tv_clase.column(i, minwidth=50, width=50, stretch=False)
             self.tv_atributos.heading(i, text=i)
             self.tv_atributos.column(i, minwidth=50, width=50, stretch=False)
 
-        """
-        TODO En appendicitis y australian, aunque guarda bien los valores no
-             los muestra todos."""
-        for atributo in df.columns:
+        for i, atributo in enumerate(df.columns):
             valores = [valor if not pd.isnull(valor) else '-' for valor \
                        in df[atributo]]
-#            valores = [valor for valor in df[atributo]]
+            valores.insert(0, atributo)
             if atributo == self.dc.info_dataset_original.clase:
-                self.tv_clase.insert('', 'end', text=(atributo),values=valores)
+                self.tv_clase.insert('', 'end', text=(0),values=valores)
             else:
-                self.tv_atributos.insert('', 'end', text=(atributo),
+                self.tv_atributos.insert('', 'end', text=(i+1),
                                          values=valores)
 
 
