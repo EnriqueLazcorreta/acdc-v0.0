@@ -16,7 +16,7 @@ from configparser import ConfigParser
 from funcionesauxiliares import tiempo_transcurrido, tamanyo_legible
 from datasetclasificacion import DatasetClasificacion as DC
 from tkinter.simpledialog import askinteger
-#from multiprocessing import Process, Queue
+from multiprocessing import Process, Queue
 
 APP_NAME = 'ACDCv0.0'
 APP_DIR = os.path.dirname(os.path.realpath(sys.argv[0]))
@@ -37,8 +37,6 @@ class GUIDatasetClasificacion():
         self._tamanyo_muestra = 5
 
         self._clase_al_final = BooleanVar(root, True)
-#        self._clase_al_final = BooleanVar(root, False)
-        
         self._mostrar_proceso = BooleanVar(root, False)
         
         estilo_bien = Style()
@@ -99,9 +97,13 @@ class GUIDatasetClasificacion():
         self.menubar.add_cascade(label='Configuración', menu=self.m_configuracion)
         
         m_ver = Menu(self.menubar, tearoff=0)
-        m_ver.add_checkbutton(label='Log del proceso',
-                              onvalue=True, offvalue=False,
-                              variable=self._mostrar_proceso)
+#        m_ver.add_radiobutton(label='Dataset original', onvalue=True,
+#                              offvalue=False, variable=self._mostrar_proceso,
+#                              state='disabled')
+        m_proyecto.add_separator()
+        m_ver.add_checkbutton(label='Log del proceso', onvalue=True,
+                              offvalue=False, variable=self._mostrar_proceso,
+                              state='disabled')
         self.menubar.add_cascade(label='Ver', menu=m_ver)
         
         root.config(menu=self.menubar)
@@ -269,20 +271,23 @@ class GUIDatasetClasificacion():
 #        self.q = Queue()
 #        hilo_lectura = Process(target=self.get_dc)
 #        hilo_lectura.start()
-#        self.dc = self.q.get()
-#        hilo_lectura.join()
-#        self.progreso.after(1000, self.check_if_running, hilo_lectura, self.progreso)
+##        self.dc = self.q.get()
+##        hilo_lectura.join()
+#        self.root.after(50, self.check_if_running, hilo_lectura, self.progreso)
         self.dc = DC(self.v_ruta_dataset.get(),
                      self.v_nombre_dataset.get(),
                      self._ruta_resultados,
                      guardar_resultados=False,
-                     clase_al_final=self._clase_al_final,
+                     clase_al_final=self._clase_al_final.get(),
                      mostrar_proceso=False,
                      num_filas_a_leer=None,
                      obtener_catalogo_robusto=False,
                      guardar_datos_proyecto=False,
                      mostrar_uso_ram=False)
+        self.escribe_datos()
 
+
+    def escribe_datos(self):
         self.escribe_muestra()
         self.v_evidencias_total.set('{:,}'.\
             format(self.dc.info_dataset_original.num_evidencias()))
@@ -293,57 +298,37 @@ class GUIDatasetClasificacion():
         self.v_evidencias_robustas.set('{:,}'.\
             format(self.dc.info_catalogo_robusto.num_evidencias()))
         
-        #TODO Mover a función.
-        df = self.dc.info_dataset_original.columnas
-
-        self.tv_clase["displaycolumns"] = list(df.index)
-        self.tv_atributos["displaycolumns"] = list(df.index)
-
-        for i in df.index:
-            self.tv_clase.heading(i, text=i)
-            self.tv_clase.column(i, minwidth=50, width=50, stretch=False)
-            self.tv_atributos.heading(i, text=i)
-            self.tv_atributos.column(i, minwidth=50, width=50, stretch=False)
-
-        #TODO En australian, aunque guarda bien los valores no los muestra todos.
-        for atributo in df.columns:
-            valores = [valor if not pd.isnull(valor) else '-' for valor \
-                       in df[atributo]]
-#            valores = [valor for valor in df[atributo]]
-            if atributo == self.dc.info_dataset_original.clase:
-                self.tv_clase.insert('', 'end', text=(atributo),values=valores)
-            else:
-                self.tv_atributos.insert('', 'end', text=(atributo),
-                                         values=valores)
+        self.muestra_atributos_y_clase()
 
         self.root.title('{} - {}'.format(APP_NAME,self.v_nombre_dataset.get()))
 
 
-#    def get_dc(self):
-#        #TODO No puedo crear self.dc en un try mientras depure DC
-##        try:
-#        dc = DC(self.v_ruta_dataset.get(),
-#                     self.v_nombre_dataset.get(),
-#                     self._ruta_resultados,
-#                     guardar_resultados=False,
-#                     clase_al_final=self._clase_al_final,
-#                     mostrar_proceso=False,
-#                     num_filas_a_leer=None,
-#                     obtener_catalogo_robusto=False,
-#                     guardar_datos_proyecto=False,
-#                     mostrar_uso_ram=False)
-#        self.q.put(dc)
-##        except Exception as e:
-##            self.t_muestra.delete(1.0, 'end')
-##            self.t_muestra.insert('end', e)
+    def get_dc(self):
+        #TODO No puedo crear self.dc en un try mientras depure DC
+#        try:
+        self.dc = DC(self.v_ruta_dataset.get(),
+                     self.v_nombre_dataset.get(),
+                     self._ruta_resultados,
+                     guardar_resultados=False,
+                     clase_al_final=self._clase_al_final,
+                     mostrar_proceso=False,
+                     num_filas_a_leer=None,
+                     obtener_catalogo_robusto=False,
+                     guardar_datos_proyecto=False,
+                     mostrar_uso_ram=False)
+        self.q.put(self.dc)
+#        except Exception as e:
+#            self.t_muestra.delete(1.0, 'end')
+#            self.t_muestra.insert('end', e)
 
 
     def check_if_running(self, hilo, ventana):
         """Check every second if the function is finished."""
         if hilo.is_alive():
-            ventana.after(1000, self.check_if_running, hilo, ventana)
+            self.root.after(50, self.check_if_running, hilo, ventana)
         else:
             ventana.destroy()
+            self.escribe_datos()
 
 
     def abrir_proyecto(self):
@@ -408,9 +393,6 @@ class GUIDatasetClasificacion():
     def escribe_muestra(self):
         self.t_muestra['state'] = 'normal'
         self.t_muestra.delete(1.0, 'end')
-#        self.t_muestra.insert('end', tiempo_transcurrido(time.time() - inicio) \
-#                              + ' leyendo catálogo\n')
-#        self.t_muestra.insert('end', '\n')
         self.t_muestra.insert('end', '#######################################'\
                               '########################\n')
         self.t_muestra.insert('end', '   PRIMERAS {:,} LÍNEAS DEL DATASET DE '\
@@ -420,82 +402,49 @@ class GUIDatasetClasificacion():
                               '########################\n')
         self.t_muestra.insert('end', 
                               self.dc.muestra(self._tamanyo_muestra))
-        
-#        self.t_muestra.insert('end', '\n\n#############################\n')
-#        self.t_muestra.insert('end', 'DESCRIPCIÓN ATRIBUTOS Y CLASE\n')
-#        self.t_muestra.insert('end', '#############################\n')
-#        self.t_muestra.insert('end', self.dc.describe_atributos_y_clase())
-#        atributos_y_clase = self.dc.describe_atributos_y_clase()
-#        print(atributos_y_clase)
-#        print()
-#        print(atributos_y_clase.info())
-#        print()
-#        print('count')
-#        print(atributos_y_clase.loc['count'])
-#        print()
-#        print('count')
-#        total = self.dc.num_evidencias_dataset
-#        print(type(atributos_y_clase.loc['count']))
-#        for i, c in enumerate(atributos_y_clase.loc['count']):
-#            if c < total:
-#                print(type(c))
-#                print('¡La columna {} tiene {} valores!'.format(i, c))
-#                print('¡El atributo {} tiene {} valores!'.format(atributos_y_clase.columns[i], c))
-#            
-#        print()
-#        print(type(atributos_y_clase))
-#        print()
-#        for i in atributos_y_clase:
-#            print(i)
-#            print(type(i))
-        
-        
-#        print()
-#        print('INFO_DATASET_ORIGINAL\n')
-#        print(self.dc.info_dataset_original.__dict__)
-##        for i, j in enumerate(self.dc.info_dataset_original.__dict__):
-##            print('\t{} {}'.format(j, self.dc.info_dataset_original.__dict__[i]))
-#        print()
-#        for i in self.dc.info_dataset_original.__dict__:
-##            print('\t{}'.format(i))
-#            print('\t{}: {}'.format(i, self.dc.info_dataset_original.__dict__[i]))
-#        print()
-#        print('\tUSO_MEMORIA: {}'.format(tamanyo_legible(self.dc.info_dataset_original.__dict__['uso_memoria'])))
-#        
-        print()
-        print('INFO')
-        print(self.dc.dataset_info())
-        
-        """
-        XXX Cuando la llamo desdee la GUI salta un error porque el dataset ya
-            no tiene los atributos constantes"""
-        print()
-        print('Atributos con DD')
-        print(self.dc.atributos_con_datos_desconocidos())
-        print()
-        
         self.t_muestra.insert('end', '\n\n')
-        self.t_muestra['state'] = 'disabled'
+        self.t_muestra['state'] = 'disabled'        
+
+
+    def muestra_atributos_y_clase(self):
+        df = self.dc.info_dataset_original.columnas
+        
+#        self.tv_clase["displaycolumns"] = list(df.index)
+#        self.tv_atributos["displaycolumns"] = list(df.index)
+        self.tv_clase["columns"] = list(df.index)
+        self.tv_atributos["columns"] = list(df.index)
+
+        for i in df.index:
+            self.tv_clase.heading(i, text=i)
+            self.tv_clase.column(i, minwidth=50, width=50, stretch=False)
+            self.tv_atributos.heading(i, text=i)
+            self.tv_atributos.column(i, minwidth=50, width=50, stretch=False)
+
+        """
+        TODO En appendicitis y australian, aunque guarda bien los valores no
+             los muestra todos."""
+        for atributo in df.columns:
+            valores = [valor if not pd.isnull(valor) else '-' for valor \
+                       in df[atributo]]
+#            valores = [valor for valor in df[atributo]]
+            if atributo == self.dc.info_dataset_original.clase:
+                self.tv_clase.insert('', 'end', text=(atributo),values=valores)
+            else:
+                self.tv_atributos.insert('', 'end', text=(atributo),
+                                         values=valores)
 
 
     #TODO Modificar para que muestre información relevante de la celda.
     def selectItem(self, event):
         curItem = self.tv_atributos.item(self.tv_atributos.focus())
         col = self.tv_atributos.identify_column(event.x)
-        print ('curItem = ', curItem)
-        print ('col = ', col)
-    
+        print('curItem = ', curItem)
+        print('col = ', col)
         if col == '#0':
             cell_value = curItem['text']
         else:
             cell_value = curItem['values'][int(col[1:])-1]
-#        elif col == '#1':
-#            cell_value = curItem['values'][0]
-#        elif col == '#2':
-#            cell_value = curItem['values'][1]
-#        elif col == '#3':
-#            cell_value = curItem['values'][2]
-        print ('cell_value = ', cell_value)
+        print('cell_value = ', cell_value)
 
 
     def guarda_configuracion(self):

@@ -39,11 +39,11 @@ class InfoDC():
 
 
     def num_evidencias(self):
-        return self.columnas[self.clase]['count']
+        return int(self.columnas[self.clase]['count'])
 
 
     def num_atributos(self):
-        return len(self.columnas.columns) - 1
+        return int(len(self.columnas.columns) - 1)
     
     
     def atributos(self):
@@ -132,17 +132,16 @@ class DatasetClasificacion():
         
         self.clase_al_final = clase_al_final
 
-        """
-        TODO ¿Dejo las rutas sin '/' final? ¿O uso módulo os para determinar
-             si añado '/'?"""
-        self.ruta_datasets = ruta_datasets
+        self.ruta_datasets = ruta_datasets if ruta_datasets[-1] in '/\\'\
+                               else ruta_datasets + '/'
         self.nombre_dataset = nombre_dataset
-        self.ruta_resultados = ruta_resultados
+        self.ruta_resultados = ruta_resultados if ruta_resultados[-1] in '/\\'\
+                               else ruta_resultados + '/'
         """
         TODO Las extensiones deberían estar en una lista guardada en el archivo
              .cfg por si el usuario quiere modificarlas."""
-        self.archivo_original = ruta_datasets + '/' + nombre_dataset + '.csv'
-        self.base_archivo_resultados = ruta_resultados + '/' + nombre_dataset
+        self.archivo_original = self.ruta_datasets + nombre_dataset + '.csv'
+        self.base_archivo_resultados = self.ruta_resultados + nombre_dataset
         
         self.mostrar_proceso = mostrar_proceso
         
@@ -178,7 +177,7 @@ class DatasetClasificacion():
                       self.info_dataset_sin_datos_desconocidos.num_evidencias()
             if num_evidencias_incompletas:
                 print('\tEliminadas {:,} evidencias incompletas'. \
-                      format(int(num_evidencias_incompletas)))
+                      format(num_evidencias_incompletas))
             else:
                 print('\tNo hay evidencias incompletas')
             print('{:,} x {:,} (DATASET SIN DATOS DESCONOCIDOS)'. \
@@ -261,6 +260,10 @@ class DatasetClasificacion():
             if self.mostrar_proceso:
                 print('\tGuardando datos proyecto')
             self.guarda_datos_proyecto()
+            
+#        self.atributos_con_datos_desconocidos()
+        print(self.atributos_con_datos_desconocidos())
+        print(self._notacion_D_I(self.atributos_constantes))
 
 
     def lee_dataset(self, num_filas_a_leer=None, valores_na='?'):
@@ -290,6 +293,7 @@ class DatasetClasificacion():
                 if self.mostrar_proceso:
                     print('\t({}) {} es constante, con el valor {}'.\
                           format(indice, atributo,
+#                          format(self._indice(indice), atributo,
                           self.dataset[atributo].unique()[0]))
                 self.atributos_constantes[atributo] = indice
                 self.dataset.drop(atributo, 1, inplace=True)
@@ -322,8 +326,8 @@ class DatasetClasificacion():
 
 
     def guarda_catalogo_robusto(self):
-        self.guarda_resultado(self.get_notacion_D_I(self.atributos_constantes,
-                                                    '.catalogo-robusto.csv'))
+        self.guarda_resultado(self._notacion_D_I(self.atributos_constantes,
+                                                 '.catalogo-robusto.csv'))
 
 
     def guarda_datos_proyecto(self):
@@ -367,7 +371,7 @@ class DatasetClasificacion():
                                   - self.info_catalogo_robusto.num_evidencias()
         archivo_proyecto['Catálogo'] = {\
             'Num evidencias': str(self.info_catalogo.num_evidencias()),
-            'Num atributos': str(self.info_catalogo.num_atributos),
+            'Num atributos': str(self.info_catalogo.num_atributos()),
             'Num evidencias con incertidumbre': \
                                     str(int(num_evidencias_con_incertidumbre)),
             'Evidencias con incertidumbre': str([indice for indice, valor \
@@ -375,7 +379,7 @@ class DatasetClasificacion():
 
         archivo_proyecto['Catálogo Robusto'] = {\
             'Num evidencias': str(self.info_catalogo_robusto.num_evidencias()),
-            'Num atributos': str(self.info_catalogo_robusto.num_atributos)}
+            'Num atributos': str(self.info_catalogo_robusto.num_atributos())}
         
         with open(self.base_archivo_resultados+'.cfg', 'w') as archivo:
             archivo_proyecto.write(archivo)
@@ -384,24 +388,14 @@ class DatasetClasificacion():
             print('\t\t' + self.base_archivo_resultados + '.cfg')
         
 
-    #TODO self.dataset puede cambiar, tenerlo en cuenta.
+    """
+    TODO self.dataset puede cambiar, el resultado depende del momento en que
+         se llame a la función. Debería llamarse muestra_catalogo_robusto() si
+         se llama fuera de la clase y obtener_catalogo_robusto=True"""
     def muestra(self, num_filas):
         return self.dataset.head(num_filas)
 
 
-    #TODO self.dataset puede cambiar, tenerlo en cuenta.
-    def describe_atributos_y_clase(self):
-        return self.dataset.describe(include='all')
-
-
-    #TODO self.dataset puede cambiar, tenerlo en cuenta.
-    def dataset_info(self):
-        return self.dataset.info()
-
-
-    """
-    XXX Cuando la llamo desdee la GUI salta un error porque el dataset ya no
-        tiene los atributos constantes"""
     def atributos_con_datos_desconocidos(self):
         total = self.info_dataset_original.num_evidencias()
         atributos = []
@@ -410,18 +404,22 @@ class DatasetClasificacion():
         for i, c in enumerate(atributos_y_clase.loc['count']):
             if c < total:
                 atributos.append(atributos_y_clase.columns[i])
-                print('\t¡El atributo {} ({}) tiene {:,} valores!'. \
-                      format(atributos_y_clase.columns[i], i, c))
-        
+                if self.mostrar_proceso:
+                    print('\t¡El atributo {} ({}) tiene {:,} valores!'. \
+                      format(atributos_y_clase.columns[i], self._indice(i), c))
+#                             i+1 if self.clase_al_final else i, c))
         return atributos
 
 
-    def get_notacion_D_I(self, I, extension='.csv'):
+    def _notacion_D_I(self, I, extension='.csv'):
         archivo = self.base_archivo_resultados
         for indice in I:
-            archivo += '-' + str(I[indice])
+            archivo += '-' + str(self._indice(I[indice]))
         return archivo + extension
 
+
+    def _indice(self, i):
+        return i+1 if self.clase_al_final else i
 
 
 
@@ -449,7 +447,7 @@ if __name__ == '__main__':
     
     num_archivos = len(archivos_KEEL)
 
-    for i, nombre_dataset in enumerate(archivos_KEEL):
+#    for i, nombre_dataset in enumerate(archivos_KEEL):
 #    for i, nombre_dataset in enumerate(['abalone']):
 #TODO En http://sci2s.ugr.es/keel/dataset.php?cod=52 dicen:
 #           "In this version, 3 duplicated instances have been removed from the 
@@ -464,7 +462,7 @@ if __name__ == '__main__':
 #    for i, nombre_dataset in enumerate(['census']):
 #    for i, nombre_dataset in enumerate(['hepatitis']):
 #    for i, nombre_dataset in enumerate(['kddcup']):
-#    for i, nombre_dataset in enumerate(['kddcup99']):
+    for i, nombre_dataset in enumerate(['kddcup99']):
 #    for i, nombre_dataset in enumerate(['monk-2']):
 #    for i, nombre_dataset in enumerate(['mushroom']):
 #    for i, nombre_dataset in enumerate(['mushroom-UCI']):
@@ -476,24 +474,21 @@ if __name__ == '__main__':
         t1 = time.time()
         
         ruta_datasets = '../datos/ACDC/'
-        ruta_resultados = '../datos/catalogos/'
-        #TODO No puedo gestionar así los datasets con clase al principio,
-        #     debería crear una tupla con los valores COMPROBADOS. Tengo
-        #     adult-UCI con la clase al final y mushroom-UCI al principio
-#        clase_al_final = False if '-UCI' in nombre_dataset else True
+        ruta_resultados = '../datos/catalogos'
         clase_al_final = True
+#        clase_al_final = False
         guardar_resultados = False
         num_filas_a_leer = None
         mostrar_proceso = False
         mostrar_tiempos = False
         mostrar_uso_ram = False
         obtener_catalogo_robusto = True
-        guardar_datos_proyecto = True
+        guardar_datos_proyecto = False
         
         if mostrar_proceso:
             print('\n###', i+1, nombre_dataset)
         else:
-            print('\b\b\b\b', end='')
+            print('\b\b\b\b\b\b\b\b', end='')
             print('{:.0%}'.format(i/num_archivos), end='')
 
         try:
