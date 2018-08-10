@@ -30,14 +30,15 @@ class GUIDatasetClasificacion():
         self.root = root
         
         #TODO Esta información se lee desde .cfg con ConfigParser
-        self._ruta_datasets = '../datos/ACDC/'
-        self._ruta_resultados = '../datos/catalogos/'
-        self._rutas_relativas = BooleanVar(root, True)
-        self._usa_sha1 = BooleanVar(root, True)
+        self.ruta_datasets = ''
+        self.ruta_resultados = ''
+        self.rutas_relativas = BooleanVar(root, True)
+        self.usa_sha1 = BooleanVar(root, True)
         self._tamanyo_muestra = 5
+        self.clase_al_final = BooleanVar(root, True)
+        self.mostrar_proceso = BooleanVar(root, False)
 
-        self._clase_al_final = BooleanVar(root, True)
-        self._mostrar_proceso = BooleanVar(root, False)
+        self.lee_configuracion()
         
         estilo_bien = Style()
         estilo_bien.configure('G.TLabel', foreground='green')
@@ -46,10 +47,14 @@ class GUIDatasetClasificacion():
         
         self.crea_GUI()
         
-        self.root.protocol('WM_DELETE_WINDOW', self.cerrar_aplicacion)
         self.root.title(APP_NAME)
-        self.root.update()
-        self.root.minsize(self.root.winfo_width(), self.root.winfo_height())
+#        self.root.update()
+#        self.root.minsize(self.root.winfo_width(), self.root.winfo_height())
+        self.root.minsize(800, 500)
+        
+#        self.lee_configuracion()
+        
+        self.root.protocol('WM_DELETE_WINDOW', self.cerrar_aplicacion)
 
 
     def crea_GUI(self):
@@ -70,7 +75,7 @@ class GUIDatasetClasificacion():
         m_proyecto.add_separator()
         m_proyecto.add_checkbutton(label='Clase al final',
                                    onvalue=True, offvalue=False,
-                                   variable=self._clase_al_final)
+                                   variable=self.clase_al_final)
         self.menubar.add_cascade(label='Proyecto', menu=m_proyecto)
 
         self.m_configuracion = Menu(self.menubar, tearoff=0)
@@ -80,7 +85,8 @@ class GUIDatasetClasificacion():
                                     command=lambda: self.rutas('resultados'))
         self.m_configuracion.add_checkbutton(label='Rutas relativas',
                                         onvalue=True, offvalue=False,
-                                        variable=self._rutas_relativas)
+                                        variable=self.rutas_relativas,
+                                        command=self.cambia_rutas)
         self.m_configuracion.add_separator()
         #TODO Revisar self.v_tamanyo_muestra, no la uso
 #        self.v_tamanyo_muestra = StringVar(root, 'Tamaño muestra ({:,})'.\
@@ -93,7 +99,7 @@ class GUIDatasetClasificacion():
         self.m_configuracion.add_separator()
         self.m_configuracion.add_checkbutton(label='Utiliza sha1',
                                         onvalue=True, offvalue=False,
-                                        variable=self._usa_sha1)
+                                        variable=self.usa_sha1)
         self.menubar.add_cascade(label='Configuración', menu=self.m_configuracion)
         
         m_ver = Menu(self.menubar, tearoff=0)
@@ -119,7 +125,7 @@ class GUIDatasetClasificacion():
                               command=self.muestra_atributos_y_clase)
         m_ver.add_separator()
         m_ver.add_checkbutton(label='Log del proceso', onvalue=True,
-                              offvalue=False, variable=self._mostrar_proceso,
+                              offvalue=False, variable=self.mostrar_proceso,
                               state='disabled')
         self.menubar.add_cascade(label='Ver', menu=m_ver)
         
@@ -255,7 +261,7 @@ class GUIDatasetClasificacion():
         inicio = time.time()
         
         #TODO Las constantes se podrán modificar a través de .cfg
-        nombre = askopenfilename(initialdir=self._ruta_datasets,
+        nombre = askopenfilename(initialdir=self.ruta_datasets,
                          filetypes =(('Archivos de valores separado por comas',
                                       '*.csv'),
                                      ('Todos los archivos', '*.*')),
@@ -268,7 +274,7 @@ class GUIDatasetClasificacion():
         
         self.v_nombre_dataset.set(os.path.splitext(os.path.basename(nombre))[0])
         #TODO Esto debería hacerlo en otro sitio, no cuando lo elijo con
-        #     filedialog, y tener en cuenta self._usa_sha1
+        #     filedialog, y tener en cuenta self.usa_sha1
         if os.path.exists(os.path.dirname(nombre)):
             self.l_nombre_dataset.configure(style='G.TLabel')
         else:
@@ -276,7 +282,7 @@ class GUIDatasetClasificacion():
         self.v_tamanyo_dataset.set(tamanyo_legible(os.path.getsize(nombre)))
         
         self.v_ruta_dataset.set(os.path.relpath(os.path.dirname(nombre)) \
-                                if self._rutas_relativas.get() else \
+                                if self.rutas_relativas.get() else \
                                 os.path.dirname(nombre))
         self.limpia_muestra()
         self.limpia_atributos_y_clase()
@@ -295,10 +301,10 @@ class GUIDatasetClasificacion():
 #        self.root.after(50, self.check_if_running, hilo_lectura, self.progreso)
         self.dc = DC(self.v_ruta_dataset.get(),
                      self.v_nombre_dataset.get(),
-                     self._ruta_resultados,
+                     self.ruta_resultados,
                      guardar_resultados=False,
-                     clase_al_final=self._clase_al_final.get(),
-                     mostrar_proceso=False,
+                     clase_al_final=self.clase_al_final.get(),
+                     mostrar_proceso=self.mostrar_proceso,
                      num_filas_a_leer=None,
                      obtener_catalogo_robusto=False,
                      guardar_datos_proyecto=False,
@@ -327,10 +333,10 @@ class GUIDatasetClasificacion():
 #        try:
         self.dc = DC(self.v_ruta_dataset.get(),
                      self.v_nombre_dataset.get(),
-                     self._ruta_resultados,
+                     self.ruta_resultados,
                      guardar_resultados=False,
-                     clase_al_final=self._clase_al_final,
-                     mostrar_proceso=False,
+                     clase_al_final=self.clase_al_final,
+                     mostrar_proceso=self.mostrar_proceso,
                      num_filas_a_leer=None,
                      obtener_catalogo_robusto=False,
                      guardar_datos_proyecto=False,
@@ -358,7 +364,7 @@ class GUIDatasetClasificacion():
 #        clase_al_final = self._clase_al_final
         
         #TODO Las constantes se podrán modificar a través de .cfg
-        nombre = askopenfilename(initialdir=self._ruta_resultados,
+        nombre = askopenfilename(initialdir=self.ruta_resultados,
                                  filetypes =(('Proyectos ACDC', '*.prjACDC'),
                                              ('Todos los archivos', '*.*')),
                                  title = 'Selecciona un proyecto ACDC')
@@ -372,17 +378,28 @@ class GUIDatasetClasificacion():
 
     def rutas(self, r=None):
         ruta = askdirectory(title='Directorio de {}'.format(r),
-                            initialdir=eval('self._ruta_{}'.format(r)),
+                            initialdir=eval('self.ruta_{}'.format(r)),
                             mustexist=True)
-        if ruta == '':
-            print(None)
-        else:
-            if self._rutas_relativas.get():
-                #TODO Sólo sirve en UNIX y macOS ¿Qué pasa con MS-Windows?
-                print(os.path.relpath(ruta))
-                print(APP_DIR)
+        if ruta != '':
+            if self.rutas_relativas.get():
+                if r == 'datasets':
+                    self.ruta_datasets = os.path.relpath(ruta)
+                else:
+                    self.ruta_resultados = os.path.relpath(ruta)
             else:
-                print(ruta)
+                if r == 'datasets':
+                    self.ruta_datasets = ruta
+                else:
+                    self.ruta_resultados = ruta
+
+
+    def cambia_rutas(self):
+        if self.rutas_relativas.get():
+            self.ruta_datasets = os.path.relpath(self.ruta_datasets)
+            self.ruta_resultados = os.path.relpath(self.ruta_resultados)
+        else:
+            self.ruta_datasets = os.path.abspath(self.ruta_datasets)
+            self.ruta_resultados = os.path.abspath(self.ruta_resultados)
 
 
     def limpia_atributos_y_clase(self):
@@ -476,14 +493,41 @@ class GUIDatasetClasificacion():
         print('cell_value = ', cell_value)
 
 
+    def lee_configuracion(self):
+        archivo_cfg = ConfigParser()
+        archivo_cfg.optionxform = lambda option: option
+        archivo_cfg.read('app.cfg')
+        
+        self.root.geometry(archivo_cfg.get('Ventana principal',
+                                           'Dimensiones y posición'))
+        self.clase_al_final.set(archivo_cfg.get('Proyecto', 'Clase al final',
+                                                fallback=True))
+        self.rutas_relativas.set(archivo_cfg.get('Proyecto', 'Rutas relativas',
+                                                 fallback=True))
+        self.ruta_datasets = archivo_cfg.get('Proyecto', 'Ruta datasets',
+                                             fallback='../datos/ACDC/')
+        self.ruta_resultados = archivo_cfg.get('Proyecto', 'Ruta resultados',
+                                             fallback='../datos/catalogos/')
+
+
     def guarda_configuracion(self):
+        archivo_cfg = ConfigParser()
+        archivo_cfg.optionxform = lambda option: option
+        
         #Dimensiones y posición de la ventana
         self.root.update()
         ancho, alto = self.root.winfo_width(), self.root.winfo_height()
         x, y = self.root.winfo_x(), self.root.winfo_y()
+        archivo_cfg['Ventana principal'] = {\
+            'Dimensiones y posición': '{}x{}+{}+{}'.format(ancho, alto, x, y)}
         
-        print('Dimensiones y posición al cerrar: {}x{}+{}+{}'.format(ancho, 
-              alto, x, y))
+        archivo_cfg['Proyecto'] = {\
+            'Clase al final': self.clase_al_final.get(),
+            'Ruta datasets': self.ruta_datasets,
+            'Ruta resultados': self.ruta_resultados,
+            'Rutas relativas': self.rutas_relativas.get()}
+        with open('app.cfg', 'w') as archivo:
+            archivo_cfg.write(archivo)
 
 
     def cerrar_aplicacion(self):
